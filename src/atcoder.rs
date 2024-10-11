@@ -323,7 +323,6 @@ impl AtCoder {
                     &Selector::parse("select[name=\"data.TaskScreenName\"] option").unwrap(),
                 ) {
                     if r.inner_html()
-                        .trim()
                         .split_whitespace()
                         .next()
                         .unwrap()
@@ -345,7 +344,6 @@ impl AtCoder {
                     .unwrap(),
                 ) {
                     if r.inner_html()
-                        .trim()
                         .split_whitespace()
                         .next()
                         .unwrap_or("")
@@ -383,7 +381,7 @@ impl AtCoder {
                 &[
                     ("data.TaskScreenName", &task_screen_name),
                     ("data.LanguageId", &language_id),
-                    ("sourceCode", &source_code),
+                    ("sourceCode", source_code),
                     ("csrf_token", &csrf_token),
                 ],
             )
