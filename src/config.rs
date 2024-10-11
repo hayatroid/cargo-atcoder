@@ -5,27 +5,30 @@ use std::{env, fs};
 use toml::Value;
 use toml_edit::Document;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub atcoder: AtCoder,
     pub profile: Profile,
-    pub _dependencies: Value,
+    pub dependencies: Value,
     pub project: Project,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 pub struct AtCoder {
     pub submit_via_binary: bool,
     pub use_cross: bool,
     pub binary_column: usize,
-    pub _update_interval: u64,
+    pub update_interval: u64,
     pub strip_path: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 pub struct Profile {
     pub target: String,
-    pub _release: Value,
+    pub release: Value,
 }
 
 #[derive(Clone, Debug, Deserialize)]
