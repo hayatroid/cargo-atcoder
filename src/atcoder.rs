@@ -20,10 +20,10 @@ pub struct ContestInfo {
 #[derive(Debug)]
 pub struct Problem {
     pub id: String,
-    pub name: String,
+    pub _name: String,
     pub url: String,
-    pub tle: String,
-    pub mle: String,
+    pub _tle: String,
+    pub _mle: String,
 }
 
 #[derive(Debug, Clone)]
@@ -217,10 +217,10 @@ impl AtCoder {
 
             problems.push(Problem {
                 id: id.trim().to_owned(),
-                name: name.trim().to_owned(),
+                _name: name.trim().to_owned(),
                 url: url.trim().to_owned(),
-                tle: tle.trim().to_owned(),
-                mle: mle.trim().to_owned(),
+                _tle: tle.trim().to_owned(),
+                _mle: mle.trim().to_owned(),
             });
         }
 
