@@ -1,15 +1,9 @@
 use std::{
-    cmp::max,
     collections::BTreeMap,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context as _, Result};
@@ -17,14 +11,10 @@ use bytesize::ByteSize;
 use cargo_metadata::{Metadata, Package, Target};
 use chrono::{DateTime, Local};
 use console::Style;
-use futures::join;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sha2::digest::Digest;
 use structopt::StructOpt;
-use tokio::time::sleep;
-use unicode_width::UnicodeWidthStr as _;
 
 use crate::metadata::{MetadataExt as _, PackageExt as _};
 
@@ -611,22 +601,6 @@ async fn submit(opt: SubmitOpt) -> Result<()> {
         .await?;
     println!();
 
-    println!("Fetching submission result...");
-    let atc = Arc::new(atc);
-    let last_id = watch_submission_status(Arc::clone(&atc), contest_id, true).await?;
-    println!();
-
-    if let Some(last_id) = last_id {
-        let res = atc.submission_status_full(contest_id, last_id).await?;
-        if let Some(code) = res.result.status.result_code() {
-            if !code.accepted() {
-                println!("Submission detail:");
-                println!();
-                print_full_result(&res, false)?;
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -837,182 +811,6 @@ fn warmup_for(metadata: &Metadata, specs: Option<&[impl AsRef<str>]>) -> Result<
     Ok(())
 }
 
-async fn watch_submission_status(
-    atc: Arc<AtCoder>,
-    contest_id: &str,
-    recent_only: bool,
-) -> Result<Option<usize>> {
-    let config = read_config()?;
-    let cur_time = chrono::offset::Utc::now();
-
-    let contest_id = contest_id.to_owned();
-    let m = Arc::new(MultiProgress::new());
-    let complete = Arc::new(AtomicBool::new(false));
-
-    let join_fut = tokio::task::spawn_blocking({
-        let m = m.clone();
-        let complete = Arc::clone(&complete);
-        move || {
-            while !complete.load(Ordering::Relaxed) {
-                m.join().unwrap();
-                std::thread::sleep(Duration::from_millis(50));
-            }
-        }
-    });
-
-    let complete_ = Arc::clone(&complete);
-    let update_fut = tokio::task::spawn(async move {
-        let mut dat = BTreeMap::new();
-
-        let spinner_style =
-            ProgressStyle::default_spinner().template("{prefix} {spinner:.cyan} {msg}");
-
-        let bar_style = ProgressStyle::default_bar()
-            .template("{prefix} [{bar:30.cyan/blue}] {pos:>2}/{len:2} {msg}")
-            .progress_chars("=>.");
-
-        let finish_style = ProgressStyle::default_spinner().template("{prefix} {msg}");
-
-        let green = Style::new().green();
-        let red = Style::new().red();
-
-        let mut last_id;
-
-        loop {
-            let results = atc.submission_status(&contest_id).await?;
-            let mut results = if !recent_only {
-                results
-            } else {
-                results
-                    .into_iter()
-                    .filter(|r| (cur_time - r.date).num_seconds() <= 10 || !r.status.done())
-                    .collect::<Vec<_>>()
-            };
-            results.sort_by_key(|r| r.date);
-
-            last_id = results.iter().last().map(|r| r.id);
-
-            let mut done = true;
-
-            for result in results {
-                let pb = dat.entry(result.id).or_insert_with(|| {
-                    let pb = ProgressBar::new_spinner().with_style(spinner_style.clone());
-
-                    let problem_name_head = {
-                        let mut problem_name_head = result.problem_name.clone();
-                        // TODO: `result.problem_name` possibly contains ambiguous width characters such as emoji.
-                        while problem_name_head.width() > 20 {
-                            problem_name_head.pop();
-                        }
-                        for _ in 0..20usize.saturating_sub(problem_name_head.width()) {
-                            problem_name_head.push(' ');
-                        }
-                        problem_name_head
-                    };
-
-                    pb.set_prefix(format!(
-                        "{} | {} |",
-                        DateTime::<Local>::from(result.date).format("%Y-%m-%d %H:%M:%S"),
-                        problem_name_head,
-                    ));
-
-                    (pb, true)
-                });
-
-                match result.status {
-                    StatusCode::Waiting(code) => {
-                        done = false;
-                        pb.0.set_style(spinner_style.clone());
-                        match code {
-                            WaitingCode::WaitingForJudge => {
-                                pb.0.set_message("Waiting for judge...")
-                            }
-                            WaitingCode::WaitingForRejudge => {
-                                pb.0.set_message("Waiting for rejudge...")
-                            }
-                        }
-                    }
-
-                    StatusCode::Progress(cur, total, code) => {
-                        done = false;
-                        pb.0.set_style(bar_style.clone());
-                        pb.0.set_length(total as _);
-                        pb.0.set_position(cur as _);
-                        if let Some(code) = code {
-                            let msg = code.short_msg();
-                            pb.0.set_message(format!(
-                                "{}",
-                                if code.accepted() {
-                                    green.apply_to(&msg)
-                                } else {
-                                    red.apply_to(&msg)
-                                }
-                            ));
-                        } else {
-                            pb.0.set_message("");
-                        }
-                    }
-
-                    StatusCode::Done(code) => {
-                        // TODO: show result breakdown on error
-                        if pb.1 {
-                            let msg = code.long_msg();
-                            let mut stat = format!(
-                                "{} ({})",
-                                if code.accepted() {
-                                    green.apply_to(&msg)
-                                } else {
-                                    red.apply_to(&msg)
-                                },
-                                result.score
-                            );
-                            let space = 30 - console::measure_text_width(&stat);
-                            for _ in 0..space {
-                                stat += " ";
-                            }
-                            pb.0.set_style(finish_style.clone());
-                            pb.0.finish_with_message(format!(
-                                "{}{}",
-                                stat,
-                                if let (Some(rt), Some(mm)) = (result.run_time, result.memory) {
-                                    format!(" | {:>7} | {}", rt, mm)
-                                } else {
-                                    "".to_owned()
-                                }
-                            ));
-                            pb.1 = false;
-                        }
-                    }
-                }
-            }
-
-            if done && recent_only {
-                complete.store(true, Ordering::Relaxed);
-                break;
-            }
-
-            let refresh_rate = 100;
-            let update_interval = max(1000, config.atcoder.update_interval);
-
-            for _ in 0..update_interval / refresh_rate {
-                for (_, (pb, live)) in dat.iter() {
-                    if *live {
-                        pb.tick();
-                    }
-                }
-                sleep(Duration::from_millis(refresh_rate)).await;
-            }
-        }
-
-        complete_.store(true, Ordering::Relaxed);
-
-        let ret: Result<Option<usize>> = Ok(last_id);
-        ret
-    });
-
-    Ok(join!(join_fut, update_fut).1??)
-}
-
 #[derive(StructOpt)]
 struct GenBinaryOpt {
     /// Problem ID to make binary
@@ -1175,26 +973,6 @@ fn print_full_result(res: &FullSubmissionResult, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-#[derive(StructOpt, Debug)]
-struct StatusOpt {
-    /// [cargo] Package
-    #[structopt(short, long, value_name("SPEC"))]
-    package: Option<String>,
-    /// [cargo] Path to Cargo.toml
-    #[structopt(long, value_name("PATH"))]
-    manifest_path: Option<PathBuf>,
-}
-
-async fn status(opt: StatusOpt) -> Result<()> {
-    let cwd = env::current_dir().with_context(|| "failed to get CWD")?;
-    let metadata = metadata::cargo_metadata(opt.manifest_path.as_deref(), &cwd)?;
-    let atc = AtCoder::new(&session_file()?)?;
-    let contest_id = &metadata.query_for_member(opt.package.as_deref())?.name;
-    let atc = Arc::new(atc);
-    watch_submission_status(atc, contest_id, false).await?;
-    Ok(())
-}
-
 #[derive(StructOpt)]
 #[structopt(bin_name("cargo"))]
 enum Opt {
@@ -1224,8 +1002,6 @@ enum OptAtCoder {
     Result(ResultOpt),
     /// Generate rustified binary
     GenBinary(GenBinaryOpt),
-    /// Show submission status
-    Status(StatusOpt),
 
     /// [WIP] Watch filesystem for automatic submission
     #[cfg(feature = "watch")]
@@ -1250,7 +1026,6 @@ async fn main() -> Result<()> {
         Submit(opt) => submit(opt).await,
         Result(opt) => result(opt).await,
         GenBinary(opt) => gen_binary(opt),
-        Status(opt) => status(opt).await,
 
         #[cfg(feature = "watch")]
         Watch(opt) => watch::watch(opt).await,
