@@ -86,7 +86,11 @@ rustc_version = "1.70.0"
 
 # source code template
 template = """
+use proconio::input;
+
 fn main() {
-    unimplemented!();
+    input! {
+        
+    }
 }
 """
