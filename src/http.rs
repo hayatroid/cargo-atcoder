@@ -36,7 +36,7 @@ impl Drop for Client {
         })();
 
         if let Err(err) = result {
-            let _ = eprintln!("An error occurred while saving the session: {}", err);
+            eprintln!("An error occurred while saving the session: {}", err);
         }
     }
 }

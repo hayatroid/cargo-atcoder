@@ -243,7 +243,7 @@ fn test_samples(
         .arg("build")
         .args(if release { vec!["--release"] } else { vec![] })
         .arg("--bin")
-        .arg(&problem_id)
+        .arg(problem_id)
         .arg("--manifest-path")
         .arg(&package.manifest_path)
         .status()?;
@@ -267,7 +267,7 @@ fn test_samples(
             .args(if release { vec!["--release"] } else { vec![] })
             .arg("-q")
             .arg("--bin")
-            .arg(&problem_id)
+            .arg(problem_id)
             .arg("--manifest-path")
             .arg(&package.manifest_path)
             .stdin(Stdio::piped())
@@ -457,7 +457,7 @@ fn test_custom(package: &Package, problem_id: &str, release: bool) -> Result<()>
         .arg("build")
         .args(if release { vec!["--release"] } else { vec![] })
         .arg("--bin")
-        .arg(&problem_id)
+        .arg(problem_id)
         .arg("--manifest-path")
         .arg(&package.manifest_path)
         .status()?;
@@ -474,7 +474,7 @@ fn test_custom(package: &Package, problem_id: &str, release: bool) -> Result<()>
         .args(if release { vec!["--release"] } else { vec![] })
         .arg("-q")
         .arg("--bin")
-        .arg(&problem_id)
+        .arg(problem_id)
         .arg("--manifest-path")
         .arg(&package.manifest_path)
         .stdout(Stdio::piped())
@@ -592,7 +592,7 @@ async fn submit(opt: SubmitOpt) -> Result<()> {
         fs::read(src_path).with_context(|| format!("Failed to read {}", src_path))?
     } else {
         println!("Submitting via binary...");
-        gen_binary_source(&metadata, package, &target, &config, opt.column, opt.no_upx)?
+        gen_binary_source(&metadata, package, target, &config, opt.column, opt.no_upx)?
     };
 
     atc.submit(contest_id, &problem_id, &String::from_utf8_lossy(&source))
@@ -775,7 +775,7 @@ fn warmup_for(metadata: &Metadata, specs: Option<&[impl AsRef<str>]>) -> Result<
         .unwrap_or_else(|| Ok(metadata.all_members()))?;
 
     for member in members {
-        if let Some(first_bin) = member.all_bins().get(0) {
+        if let Some(first_bin) = member.all_bins().first() {
             println!("Warming up debug build for `{}`...", member.name);
 
             let stat = Command::new("cargo")
