@@ -9,7 +9,7 @@ use toml_edit::Document;
 pub struct Config {
     pub atcoder: AtCoder,
     pub profile: Profile,
-    pub dependencies: Value,
+    pub _dependencies: Value,
     pub project: Project,
 }
 
@@ -18,14 +18,14 @@ pub struct AtCoder {
     pub submit_via_binary: bool,
     pub use_cross: bool,
     pub binary_column: usize,
-    pub update_interval: u64,
+    pub _update_interval: u64,
     pub strip_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Profile {
     pub target: String,
-    pub release: Value,
+    pub _release: Value,
 }
 
 #[derive(Clone, Debug, Deserialize)]
