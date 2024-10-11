@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
@@ -9,7 +8,6 @@ use std::{
 use anyhow::{bail, ensure, Context as _, Result};
 use bytesize::ByteSize;
 use cargo_metadata::{Metadata, Package, Target};
-use chrono::{DateTime, Local};
 use console::Style;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -845,135 +843,6 @@ fn gen_binary(opt: GenBinaryOpt) -> Result<()> {
 }
 
 #[derive(StructOpt)]
-struct ResultOpt {
-    /// submission ID
-    submission_id: usize,
-    /// [cargo] Package
-    #[structopt(short, long, value_name("SPEC"))]
-    package: Option<String>,
-    /// [cargo] Path to Cargo.toml
-    #[structopt(long, value_name("PATH"))]
-    manifest_path: Option<PathBuf>,
-    /// Use verbose output
-    #[structopt(long, short)]
-    verbose: bool,
-}
-
-async fn result(opt: ResultOpt) -> Result<()> {
-    let cwd = env::current_dir().with_context(|| "failed to get CWD")?;
-    let metadata = metadata::cargo_metadata(opt.manifest_path.as_deref(), &cwd)?;
-    let atc = AtCoder::new(&session_file()?)?;
-    let contest_id = &metadata.query_for_member(opt.package.as_deref())?.name;
-    let res = atc
-        .submission_status_full(contest_id, opt.submission_id)
-        .await?;
-
-    print_full_result(&res, opt.verbose)
-}
-
-fn print_full_result(res: &FullSubmissionResult, verbose: bool) -> Result<()> {
-    let green = Style::new().green();
-    let red = Style::new().red();
-    let cyan = Style::new().cyan();
-
-    println!("Submission ID: {}", cyan.apply_to(res.result.id));
-    println!(
-        "Date:          {}",
-        DateTime::<Local>::from(res.result.date).format("%Y-%m-%d %H:%M:%S")
-    );
-    println!("Problem:       {}", res.result.problem_name);
-    println!("Language:      {}", res.result.language);
-    println!("Score:         {}", res.result.score);
-    println!("Code length:   {}", res.result.code_length);
-
-    let stat = if let Some(code) = res.result.status.result_code() {
-        let msg = code.long_msg();
-        format!(
-            "{}",
-            if code.accepted() {
-                green.apply_to(&msg)
-            } else {
-                red.apply_to(&msg)
-            },
-        )
-    } else {
-        "N/A".to_string()
-    };
-
-    println!("Result:        {}", stat);
-    println!(
-        "Runtime:       {}",
-        res.result.run_time.as_deref().unwrap_or("N/A")
-    );
-    println!(
-        "Memory:        {}",
-        res.result.memory.as_deref().unwrap_or("N/A")
-    );
-
-    if res
-        .result
-        .status
-        .result_code()
-        .map(|c| !c.accepted())
-        .unwrap_or(false)
-        && !res.cases.is_empty()
-    {
-        let mut mm = BTreeMap::<&ResultCode, usize>::new();
-        for case in res.cases.iter() {
-            if let Some(code) = case.result.result_code() {
-                *mm.entry(code).or_default() += 1;
-            }
-        }
-
-        println!();
-        println!("Breakdown:");
-
-        for (code, count) in mm {
-            let msg = format!("{:25}", code.long_msg());
-            let msg = format!(
-                "{}",
-                if code.accepted() {
-                    green.apply_to(&msg)
-                } else {
-                    red.apply_to(&msg)
-                },
-            );
-
-            println!("    * {}: {}", msg, count);
-        }
-
-        if verbose {
-            println!();
-            println!("All result:");
-
-            for case in res.cases.iter() {
-                let stat = if let Some(code) = case.result.result_code() {
-                    let msg = format!("{:15}", code.long_msg());
-                    format!(
-                        "{}",
-                        if code.accepted() {
-                            green.apply_to(&msg)
-                        } else {
-                            red.apply_to(&msg)
-                        },
-                    )
-                } else {
-                    "N/A".to_string()
-                };
-                println!(
-                    "    * {:20} {}, {}, {}",
-                    case.name.clone() + ":",
-                    stat,
-                    case.run_time.clone().unwrap_or_else(|| "N/A".to_string()),
-                    case.memory.clone().unwrap_or_else(|| "N/A".to_string())
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-#[derive(StructOpt)]
 #[structopt(bin_name("cargo"))]
 enum Opt {
     #[structopt(name = "atcoder")]
@@ -998,8 +867,6 @@ enum OptAtCoder {
     Test(TestOpt),
     /// Submit solution
     Submit(SubmitOpt),
-    /// Show submission result detail
-    Result(ResultOpt),
     /// Generate rustified binary
     GenBinary(GenBinaryOpt),
 
@@ -1024,7 +891,6 @@ async fn main() -> Result<()> {
         Warmup(opt) => warmup(opt),
         Test(opt) => test(opt).await,
         Submit(opt) => submit(opt).await,
-        Result(opt) => result(opt).await,
         GenBinary(opt) => gen_binary(opt),
 
         #[cfg(feature = "watch")]
